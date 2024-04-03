@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Konva Example: Interactive Rectangles with Collision Detection and Grid (v12)</title>
+  <script src="https://cdn.jsdelivr.net/npm/konva@7.2.2/konva.min.js"></script>
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #container {
+      border: 1px solid black;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container"></div>
+  <script>
+    var stage = new Konva.Stage({
+      container: 'container',
+      width: window.innerWidth - 50,
+      height: window.innerHeight - 50
+    });
+
+    var layer = new Konva.Layer();
+    stage.add(layer);
+
+    // Inicjalizacja pustej mapy przechowującej grupy
+    var groupsMap = new Map();
+
+    function createGrid() {
+      for (var i = 0; i < stage.width(); i += 20) {
+        var line = new Konva.Line({
+          points: [i, 0, i, stage.height()],
+          stroke: 'gray',
+          strokeWidth: 1,
+          opacity: 0.5
+        });
+        layer.add(line);
+      }
+
+      for (var j = 0; j < stage.height(); j += 20) {
+        var line = new Konva.Line({
+          points: [0, j, stage.width(), j],
+          stroke: 'gray',
+          strokeWidth: 1,
+          opacity: 0.5
+        });
+        layer.add(line);
+      }
+
+      layer.draw();
+    }
+
+    createGrid();
+
+    function addRectangle() {
+      var rect = new Konva.Rect({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 50,
+        fill: Konva.Util.getRandomColor(),
+        draggable: false
+      });
+
+      var text = new Konva.Text({
+        x: 25,
+        y: rect.height() - 20,
+        text: 'X: ' + rect.x().toFixed(2) + ', Y: ' + rect.y().toFixed(2),
+        fontSize: 9,
+        fill: getContrastColor(rect.fill())
+      });
+
+      var marker = new Konva.Group({
+        x: rect.width() / 2,
+        y: rect.height() / 2,
+        draggable: false,
+        listening: false
+      });
+
+      var dashedLine = new Konva.Line({
+        points: [-5, 0, 5, 0],
+        stroke: getContrastColor(rect.fill()),
+        strokeWidth: 1,
+        dash: [2, 2],
+        tension: 0,
+        closed: false
+      });
+
+      var dashedLine2 = new Konva.Line({
+        points: [0, -5, 0, 5],
+        stroke: getContrastColor(rect.fill()),
+        strokeWidth: 1,
+        dash: [2, 2],
+        tension: 0,
+        closed: false
+      });
+
+      marker.add(dashedLine);
+      marker.add(dashedLine2);
+
+      var group = new Konva.Group({
+        x: window.innerWidth / 5 + Math.random() * (window.innerWidth / 2),
+        y: window.innerHeight / 5 + Math.random() * (window.innerHeight / 2),
+        draggable: true,
+
+      });
+      group.oldX = group.x();
+      group.oldY = group.y();
+      group.lastPosBuf = [[group.oldX, group.oldY]];
+      group.buffing = function (newPos) {
+        this.lastPosBuf.push(newPos);
+        if (this.lastPosBuf.length > 3) {
+          this.lastPosBuf.shift();
+        }
+      }
+      group.on('dragmove', function (ele) {
+        checkCollision(group);
+        updateGroupPosition(rect, group, marker);
+      });
+
+      group.add(rect);
+      group.add(text);
+      group.add(marker);
+
+      updateGroupPosition(rect, group, marker);
+
+      layer.add(group);
+      layer.draw();
+
+      // Dodajemy nową grupę do mapy
+      addGroupToMap(group);
+    }
+
+    function updateGroupPosition(rect, group, marker) {
+      var text = group.findOne('Text');
+
+      text.text('X: ' + ((group.x()).toFixed(2)) + ', Y: ' + ((group.y()).toFixed(2)));
+
+      text.x(rect.x() + 0);
+      text.y(rect.y() + rect.height() - 10);
+      marker.position({
+        x: rect.width() / 2,
+        y: rect.height() / 2
+      });
+    }
+
+    function addGroupToMap(group) {
+      // Dodajemy nową grupę do mapy, korzystając z jej unikalnego identyfikatora
+      groupsMap.set(group._id, group);
+    }
+    var collidedX = false;
+    var collidedY = false;
+
+    function checkCollision(group) {
+      group.buffing([group.x(), group.y()]);
+      var groupRect = group.findOne('Rect').getClientRect();
+      var lastSafeX = group.oldX;
+      var lastSafeY = group.oldY;
+      // var collidedX = false;
+      // var collidedY = false;
+
+      var dx = group.x() - group.oldX;
+      var dy = group.y() - group.oldY;
+      console.log('Dx:', dx);
+      console.log('Dy:', dy);
+      // var firstTouch = '';
+
+      // Sprawdzamy, czy grupa koliduje z krawędziami sceny po osi X
+
+      if (groupRect.x < 0 || groupRect.x + groupRect.width > stage.width()) {
+        group.x(group.oldX);
+        collidedX = true;
+      } else {
+        lastSafeX = group.x();
+      }
+
+      // Sprawdzamy, czy grupa koliduje z krawędziami sceny po osi Y
+      if (groupRect.y < 0 || groupRect.y + groupRect.height > stage.height()) {
+        group.y(group.oldY);
+        collidedY = true;
+      } else {
+        lastSafeY = group.y();
+      }
+
+      // Iterujemy przez mapę grup, aby sprawdzić kolizje z innymi grupami
+      groupsMap.forEach(function (otherGroup) {
+        console.log('Other Group', otherGroup)
+        console.log('Group', group)
+        //console.log('group.x = ' , groupRect.x, ' otherGroup.x = ', otherGroup.x());
+        //console.log('group.x+height = ' , group.children[0].height(), ' otherGroup.x+height = ', 			  otherGroup.children[0].height());
+        if (otherGroup !== group) {
+
+          console.log('Group X  : ', group.x())
+          console.log('Group Y  : ', group.y())
+          var otherGroupRect = otherGroup.findOne('Rect').getClientRect();
+          console.log('--otherGroupRect', otherGroupRect)
+          var distanceXToOther = groupRect.x - otherGroupRect.x;
+          var distanceYToOther = groupRect.y - otherGroupRect.y;
+          var distanceXToOther2 = Math.abs(distanceXToOther) - 100;
+          var distanceYToOther2 = Math.abs(distanceYToOther) - 50;
+
+
+          console.log('groupRect.x:', groupRect.x)
+          console.log('otherGroupRect.x:', otherGroupRect.x)
+          console.log('distanceXToOther:', distanceXToOther)
+          console.log('distanceYToOther:', distanceYToOther)
+          console.log('distanceXToOther2:', distanceXToOther2)
+          console.log('distanceYToOther2:', distanceYToOther2)
+          console.log('group.oldX :', group.oldX)
+          console.log('lastSafeX:', lastSafeX)
+
+
+
+          if (distanceXToOther2 < 0 && distanceYToOther2 < 0) {
+            console.log('COLLISION')
+            console.log('lastPosBuf', group.lastPosBuf[0]);
+            console.log('Group X  : ', group.x())
+            if (group.x() - group.lastPosBuf[0][0] >= 0 && Math.abs(distanceYToOther2) > Math.abs(distanceXToOther2)) {
+              console.log('LEFT SIDE')
+              if (!collidedY) {
+                collidedX = true;
+              }
+              return
+            } else if (group.x() - group.lastPosBuf[0][0] <= 0 && Math.abs(distanceYToOther2) > Math.abs(distanceXToOther2)) {
+              console.log('RIGHT SIDE');
+              if (!collidedY) {
+                collidedX = true;
+              }
+              return
+            } else if (group.y() - group.lastPosBuf[0][1] >= 0 && Math.abs(distanceYToOther2) < Math.abs(distanceXToOther2)) {
+              console.log('TOP SIDE')
+              if (!collidedX) {
+                collidedY = true;
+              }
+              return
+            } else if (group.y() - group.lastPosBuf[0][1] <= 0 && Math.abs(distanceYToOther2) < Math.abs(distanceXToOther2)) {
+              console.log('BOTTOM SIDE')
+              if (!collidedX) {
+                collidedY = true;
+              }
+              return
+            }
+          } else {
+            if ((distanceYToOther2 > 5) || (distanceXToOther2 > 5)) {
+              collidedX = false;
+              collidedY = false;
+            }
+          }
+
+        }
+      });
+
+
+      // Blokujemy poruszanie się po osi X, jeśli wystąpiła kolizja na tej osi
+      if (collidedX) {
+        // console.log('xStop')
+        group.x(group.oldX);
+
+      } else {
+        // console.log('xMoves')
+        group.oldX = lastSafeX;
+        // firstTouch = '';
+      }
+
+      if (collidedY) {
+        // console.log('yStop')
+        group.y(group.oldY);
+      } else {
+        // console.log('yMoves')
+        group.oldY = lastSafeY;
+        // firstTouch = '';
+      }
+      console.log('Group X  : ', group.x())
+      console.log('Group Y  : ', group.y())
+      console.log('group.oldX :', group.oldX)
+      console.log('lastSafeX:', lastSafeX)
+      console.log('colidedX', collidedX)
+      console.log('colidedY', collidedY)
+      console.log('Gorups Map', groupsMap)
+    }
+
+    function haveIntersectionX(r1, r2) {
+      const intersect = !(r2.x > r1.x + r1.width || r2.x + r2.width < r1.x);
+      // console.log('intersection X = ', intersect);
+      return intersect;
+    }
+
+    function haveIntersectionY(r1, r2) {
+      const intersect = !(r2.y > r1.y + r1.height || r2.y + r2.height < r1.y);
+      // console.log('intersection Y = ', intersect);
+      return intersect;
+    }
+
+
+    function getContrastColor(hexColor) {
+      var r = parseInt(hexColor.substr(1, 2), 16);
+      var g = parseInt(hexColor.substr(3, 2), 16);
+      var b = parseInt(hexColor.substr(5, 2), 16);
+      var yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+      return (yiq >= 128) ? '#000000' : '#FFFFFF';
+    }
+
+    var addButton = document.createElement('button');
+    addButton.textContent = 'Add Rectangle';
+    addButton.addEventListener('click', function () {
+      addRectangle();
+
+    });
+    document.body.appendChild(addButton);
+  </script>
+</body>
+
+</html>
